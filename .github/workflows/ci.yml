@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.14"]
     steps:
       - uses: actions/checkout@v4
 
@@ -22,7 +22,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install project
-        run: uv sync --python ${{ matrix.python-version }} --extra dev || uv pip install -e ".[dev]"
+        run: uv sync --python ${{ matrix.python-version }} --extra dev
 
       - name: Lint
         run: uvx ruff check .
