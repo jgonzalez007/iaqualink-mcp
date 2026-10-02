@@ -16,9 +16,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
-
 from iaqualink.client import AqualinkClient
+from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP(
     "iAqualink",
@@ -53,13 +52,21 @@ def _creds() -> tuple[str, str]:
 
 
 def _device_summary(key: str, device: Any) -> dict[str, Any]:
-    return {
+    summary = {
         "key": key,
         "label": getattr(device, "label", key),
         "state": getattr(device, "state", None),
         "is_on": getattr(device, "is_on", None),
         "name": getattr(device, "name", None),
     }
+    # Lights carry extra capability info; set_light_effect needs the exact
+    # names from supported_effects, so surface them rather than make callers guess.
+    if getattr(device, "supports_effect", False):
+        summary["effect"] = getattr(device, "effect", None)
+        summary["supported_effects"] = list(getattr(device, "supported_effects", []) or [])
+    if getattr(device, "supports_brightness", False):
+        summary["brightness"] = getattr(device, "brightness", None)
+    return summary
 
 
 def _system_summary(serial: str, system: Any) -> dict[str, Any]:
@@ -212,12 +219,23 @@ async def toggle_device(system_serial: str, device_key: str) -> dict[str, Any]:
     username, password = _creds()
     async with AqualinkClient(username, password) as client:
         device = await _get_device(client, system_serial, device_key)
-        await device.toggle()
+        is_on = getattr(device, "is_on", None)
+        if is_on is None:
+            raise ValueError(
+                f"Device '{device_key}' does not report an on/off state, so it cannot "
+                "be toggled. Use get_device to inspect it."
+            )
+        if is_on:
+            await device.turn_off()
+        else:
+            await device.turn_on()
         return _device_summary(device_key, device)
 
 
 @mcp.tool()
-async def set_temperature(system_serial: str, device_key: str, temperature: float) -> dict[str, Any]:
+async def set_temperature(
+    system_serial: str, device_key: str, temperature: float
+) -> dict[str, Any]:
     """Set a thermostat's target temperature (pool_set_point / spa_set_point, etc).
 
     Args:
@@ -235,62 +253,48 @@ async def set_temperature(system_serial: str, device_key: str, temperature: floa
 
 @mcp.tool()
 async def set_light_effect(system_serial: str, device_key: str, effect: str) -> dict[str, Any]:
-    """Set an ICL/IntelliCenter light to a named preset color/effect (e.g. 'Emerald Green').
+    """Set a color light to a named preset color/effect (e.g. 'Emerald Green').
 
     Args:
         system_serial: A system serial from list_systems.
-        device_key: An ICL light device key from list_devices.
-        effect: The preset effect/color name.
+        device_key: A color light device key from list_devices.
+        effect: The preset effect/color name. Must be one of the light's
+            supported_effects, which get_device reports.
     """
     _require_write_access()
     username, password = _creds()
     async with AqualinkClient(username, password) as client:
         device = await _get_device(client, system_serial, device_key)
-        await device.set_effect(effect)
+        if not getattr(device, "supports_effect", False):
+            raise ValueError(f"Device '{device_key}' does not support color effects.")
+        supported = list(getattr(device, "supported_effects", []) or [])
+        if supported and effect not in supported:
+            raise ValueError(
+                f"'{effect}' is not a supported effect for '{device_key}'. "
+                f"Supported effects: {', '.join(supported)}"
+            )
+        await device.set_effect_by_name(effect)
         return _device_summary(device_key, device)
 
 
 @mcp.tool()
-async def set_light_rgbw(
-    system_serial: str,
-    device_key: str,
-    red: int,
-    green: int,
-    blue: int,
-    white: int = 0,
+async def set_light_brightness(
+    system_serial: str, device_key: str, percentage: int
 ) -> dict[str, Any]:
-    """Set a custom RGBW color (0-255 each channel) on an ICL/IntelliCenter light.
+    """Set brightness (0-100) on a dimmable light.
 
     Args:
         system_serial: A system serial from list_systems.
-        device_key: An ICL light device key from list_devices.
-        red: Red channel, 0-255.
-        green: Green channel, 0-255.
-        blue: Blue channel, 0-255.
-        white: White channel, 0-255. Defaults to 0.
-    """
-    _require_write_access()
-    username, password = _creds()
-    async with AqualinkClient(username, password) as client:
-        device = await _get_device(client, system_serial, device_key)
-        await device.set_rgbw(red, green, blue, white=white)
-        return _device_summary(device_key, device)
-
-
-@mcp.tool()
-async def set_light_brightness(system_serial: str, device_key: str, percentage: int) -> dict[str, Any]:
-    """Set brightness (0-100) on an ICL/IntelliCenter light.
-
-    Args:
-        system_serial: A system serial from list_systems.
-        device_key: An ICL light device key from list_devices.
+        device_key: A dimmable light device key from list_devices.
         percentage: Brightness from 0 to 100.
     """
     _require_write_access()
     username, password = _creds()
     async with AqualinkClient(username, password) as client:
         device = await _get_device(client, system_serial, device_key)
-        await device.set_brightness_percentage(percentage)
+        if not getattr(device, "supports_brightness", False):
+            raise ValueError(f"Device '{device_key}' is not dimmable.")
+        await device.set_brightness(percentage)
         return _device_summary(device_key, device)
 
 

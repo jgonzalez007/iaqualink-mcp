@@ -15,9 +15,18 @@ Tools provided:
 - `get_system_status` — system + every device's state in one call
 - `turn_on` / `turn_off` / `toggle_device`
 - `set_temperature` — thermostat set points
-- `set_light_effect` / `set_light_rgbw` / `set_light_brightness` — ICL/IntelliCenter lights
+- `set_light_effect` — named preset colors on color lights
+- `set_light_brightness` — dimmable lights
 
 Set `IAQUALINK_READ_ONLY=true` to disable every write tool and only allow reads.
+
+## Requirements
+
+Python **3.14 or newer**. This is not a style choice: the `iaqualink` library
+declares `Python>=3.14` from 0.7.0rc1 on, and the last version that allowed
+older interpreters (0.6.0) still required 3.12. There is no published
+`iaqualink` that works on 3.10 or 3.11, so dependency resolution fails
+outright on those.
 
 ## Install
 
